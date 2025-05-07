@@ -1,0 +1,73 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+<<<<<<< HEAD
+# Contact:     hello@dexterexplains.com
+=======
+# Contact:     dexter.codo@gmail.com
+>>>>>>> 4101d20 (initial commit)
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: all
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+  vars_prompt:
+   - name: "new_username"
+     prompt: "Username for new account to be created in remote server?"
+     private: false
+
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+  
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Creating the user {{ new_username }}.
+    user:
+      name: "{{ new_username }}"
+      createhome: true
+      shell: /bin/bash
+      append: true
+      groups: 
+      - users
+      - root
+      - sudo
+      state: present  
+
+  - name: Create a dedicated sudo entry file for the user.
+    file:
+      path: "/etc/sudoers.d/{{ new_username }}"
+      state: touch
+      mode: '0600'
+      
+  - name: Setting up Sudo without Password for user {{ new_username }}.
+    lineinfile:
+      dest: "/etc/sudoers.d/{{ new_username }}"
+      line: '{{ new_username }}  ALL=(ALL) NOPASSWD: ALL'
+      validate: 'visudo -cf %s'
+      state: present 
+
+  - name: Set authorized key for user copying it from current {{ new_username }} user.
+    authorized_key:
+      user: "{{ new_username }}"
+      state: present
+      key: "{{ lookup('file', playbook_dir + '/keys/' + public_key_name) }}"
+
+  - name: Print the created user.
+    shell: id "{{ new_username }}"
+    register: new_user_created
+    
+  - debug:
+      msg: "{{ new_user_created.stdout_lines[0] }}"
+
+  # CLEAN UP ---------------------------------------------------------------------------------

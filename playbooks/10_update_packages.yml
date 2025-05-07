@@ -1,0 +1,40 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+<<<<<<< HEAD
+# Contact:     hello@dexterexplains.com
+=======
+# Contact:     dexter.codo@gmail.com
+>>>>>>> 4101d20 (initial commit)
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: all
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Update repository cache & upgrade packages.
+    apt:
+      update_cache: true
+      upgrade: dist
+  # CLEAN UP ---------------------------------------------------------------------------------

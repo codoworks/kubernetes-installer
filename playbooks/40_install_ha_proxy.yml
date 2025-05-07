@@ -1,0 +1,84 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+<<<<<<< HEAD
+# Contact:     hello@dexterexplains.com
+=======
+# Contact:     dexter.codo@gmail.com
+>>>>>>> 4101d20 (initial commit)
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: ha_proxy_node
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks: 
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  - name: Ensure dependency packages required for HA Proxy are installed.
+    apt:
+      name: 
+        - software-properties-common 
+      state: latest
+
+  # BEGIN ------------------------------------------------------------------------------------
+  
+  # - name: Add Kubernetes APT repository.
+  #   apt_repository:
+  #     repo: "ppa:vbernat/haproxy-{{ ha_proxy_apt_pkg_version }}"
+  #     state: present
+  #     update_cache: true
+
+  # - name: Full system update.
+  #   apt:
+  #     update_cache: true
+  #     upgrade: dist
+  #     cache_valid_time: 3600
+  #     force_apt_get: true
+
+  - name: Install HA Proxy packages.
+    apt:
+      name: 
+        - haproxy={{ ha_proxy_version }}
+      state: present
+
+  - name: Configure HA Proxy.
+    lineinfile:
+      dest: /etc/default/haproxy
+      regexp: "^ENABLED.+$"
+      line: "ENABLED=1"
+      state: present
+
+  - name: Enable and start haproxy service.
+    systemd: 
+      name: haproxy
+      state: restarted
+      enabled: true
+      daemon-reload: true
+
+  # CLEAN UP ---------------------------------------------------------------------------------

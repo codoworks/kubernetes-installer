@@ -1,0 +1,32 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+<<<<<<< HEAD
+# Contact:     hello@dexterexplains.com
+=======
+# Contact:     dexter.codo@gmail.com
+>>>>>>> 4101d20 (initial commit)
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: all
+  become: false
+  gather_facts: false
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks: 
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Ping nodes
+    ansible.builtin.ping:
+  # CLEAN UP ---------------------------------------------------------------------------------

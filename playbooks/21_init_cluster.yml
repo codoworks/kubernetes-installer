@@ -1,0 +1,212 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+<<<<<<< HEAD
+# Contact:     hello@dexterexplains.com
+=======
+# Contact:     dexter.codo@gmail.com
+>>>>>>> 4101d20 (initial commit)
+# Project:     Kubernetes Installer
+##
+
+# SINGLE MASTER NODE AS INITIALIZER ----------------------------------------------------------
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: initializing_master_node
+# - hosts: test_nodes
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name" 
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+  
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+# BEGIN ------------------------------------------------------------------------------------
+  - name: Create an empty Kubeadm config file.
+    copy:
+      content: ""
+      dest: /etc/kubernetes/kubeadm-config.yaml
+      force: false
+      
+  - name: Configuring the container runtime including its cgroup driver.
+    blockinfile:
+      path: /etc/kubernetes/kubeadm-config.yaml
+      block: |
+            kind: ClusterConfiguration
+            apiVersion: kubeadm.k8s.io/v1beta4
+            networking:
+              podSubnet: "192.168.0.0/16"
+            ---
+            kind: KubeletConfiguration
+            apiVersion: kubelet.config.k8s.io/v1beta1
+            runtimeRequestTimeout: "15m"
+            cgroupDriver: "systemd"
+            systemReserved:
+              cpu: 100m
+              memory: 350M
+            kubeReserved:
+              cpu: 100m
+              memory: 50M
+            enforceNodeAllocatable:
+            - pods
+
+  - name: Initialize a Kubernetes cluster.
+    shell: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml --upload-certs >> cluster_initialized.log
+    args:
+      chdir: "/home/{{ node_username }}"
+      creates: cluster_initialized.log
+  
+  - name: Create $HOME/.kube directory.
+    file:
+      path: "/home/{{ node_username }}/.kube"
+      state: directory
+      mode: 0755
+  
+  - name: Add kube config to $HOME/.kube directory.
+    copy:
+      src: /etc/kubernetes/admin.conf
+      dest: "/home/{{ node_username }}/.kube/config"
+      remote_src: true
+      owner: "{{ node_username }}"
+  
+  - name: Fetch kube config file to local control workstation.
+    fetch: 
+      fail_on_missing: true
+      flat: true
+      src: /home/ansible/.kube/config
+      dest: "{{ playbook_dir + '/temp/config' }}"
+  
+  - name: Install Calico pod network.
+    become: true
+    become_user: "{{ node_username }}"
+    shell: "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml >> pod_network_setup.log"
+    args:
+      chdir: "/home/{{ node_username }}"
+      creates: pod_network_setup.log
+
+  - name: Create workers join command.
+    shell: kubeadm token create --print-join-command
+    register: workers_join_command_raw
+
+  - name: Set workers join command as a fact.
+    set_fact:
+      join_command: "{{ workers_join_command_raw.stdout_lines[0] }}"
+  
+  # CLEAN UP ---------------------------------------------------------------------------------
+  - name: Display workers join command.
+    ansible.builtin.debug:
+      msg: "{{ join_command }}"
+
+
+# OTHER MASTER NODES -------------------------------------------------------------------------
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: master_nodes
+  become: true
+  gather_facts: true
+  
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  - name: Ensure the initializing master node is reachable by workers.
+    wait_for: "host={{ groups['initializing_master_node'][0] }} port=6443 timeout=1"
+
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Join the cluster as a control-plane.
+    shell: "{{ hostvars[groups['initializing_master_node'][0]].join_command }} --control-plane >> node_joined.log"
+    args:
+      chdir: "/home/{{ node_username }}"
+      creates: node_joined.log
+
+  # CLEAN UP ---------------------------------------------------------------------------------
+  # 
+
+
+# WORKER NODES -------------------------------------------------------------------------------
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: worker_nodes
+  become: true
+  gather_facts: true
+  
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  - name: Ensure the initializing master node is reachable by workers.
+    wait_for: "host={{ groups['initializing_master_node'][0] }} port=6443 timeout=1"
+
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Join the cluster as a worker node.
+    shell: "{{ hostvars[groups['initializing_master_node'][0]].join_command }} >> node_joined.log"
+    args:
+      chdir: "/home/{{ node_username }}"
+      creates: node_joined.log
+
+  # CLEAN UP ---------------------------------------------------------------------------------
+  # 

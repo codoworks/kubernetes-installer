@@ -1,0 +1,10 @@
+- hosts: test_nodes
+  gather_facts: true
+  # become: yes
+
+  tasks: 
+  - name: Configure Metrics Server to work without TLS verification.
+    blockinfile:
+      path: "/home/{{ node_username }}/metrics_server_components.yaml"
+      insertafter: "- args:"
+      block: "        - --kubelet-insecure-tls" 

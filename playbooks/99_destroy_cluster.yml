@@ -1,0 +1,84 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+<<<<<<< HEAD
+# Contact:     hello@dexterexplains.com
+=======
+# Contact:     dexter.codo@gmail.com
+>>>>>>> 4101d20 (initial commit)
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+# - hosts: worker_nodes:master_nodes:initializing_master_node
+- hosts: test_nodes
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Draining the node.
+    shell: kubectl drain {{ ansible_hostname }} --delete-emptydir-data --force --ignore-daemonsets
+
+  - name: Resetting kubeadm.
+    shell: kubeadm reset -f
+
+  - name: Removing the node
+    shell: kubectl delete node {{ ansible_hostname }}
+
+  - name: Resetting iptables.
+    shell: iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
+
+  - name: Resetting ipvs.
+    shell: ipvsadm -C
+  
+  # CLEAN UP ---------------------------------------------------------------------------------
+# - hosts: initializing_master_node
+- hosts: test_nodes
+  become: true
+  gather_facts: true
+  tasks:
+  - name: Delete /etc/kubernetes/kubeadm-config.yaml from initializing master node.
+    file:
+      path: /etc/kubernetes/kubeadm-config.yaml
+      state: absent
+  
+  - name: Delete $HOME/.kube/config from initializing master node.
+    file:
+      path: "/home/{{ node_username }}/.kube/config"
+      state: absent
+
+  - name: Delete cluster_initialized.log from initializing master node.
+    file:
+      path: "/home/{{ node_username }}/cluster_initialized.log"
+      state: absent
+  
+  - name: Delete pod_network_setup.log from initializing master node.
+    file:
+      path: "/home/{{ node_username }}/pod_network_setup.log"
+      state: absent
