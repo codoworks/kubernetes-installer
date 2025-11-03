@@ -1,0 +1,91 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+# Contact:     hello@dexterexplains.com
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: initializing_master_node
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks: 
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  # BEGIN ------------------------------------------------------------------------------------
+  # - name: Install MetalLB For LoadBalancer Controller
+  #   when: baremetal
+  #   become: false
+  #   shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
+
+  - name: Create An Empty Ip Pools Config
+    copy:
+      content: ""
+      dest: /home/{{ node_username }}/ip-pools.yaml
+      force: false
+
+  - name: Update Config IP Pools LoadBalancer
+    blockinfile:
+      path: /home/{{ node_username }}/ip-pools.yaml
+      block: |
+            apiVersion: metallb.io/v1beta1
+            kind: IPAddressPool
+            metadata:
+              name: first-pool
+              namespace: metallb-system
+            spec:
+              addresses:
+              - {{ loadbalancer_ip_pools }}
+
+  - name: Create An Empty l2 metllb config
+    copy:
+      content: ""
+      dest: /home/{{ node_username }}/l2-advertise.yaml
+      force: false
+
+  - name: Update Config IP Pools LoadBalancer
+    blockinfile:
+      path: /home/{{ node_username }}/l2-advertise.yaml
+      block: |
+            apiVersion: metallb.io/v1beta1
+            kind: L2Advertisement
+            metadata:
+              name: l2-mode
+              namespace: metallb-system    
+
+  - name: Apply Config Ip Pools For LoadBalancer IP address
+    when: baremetal
+    become: false
+    shell: sleep 60 && kubectl apply -f /home/{{ node_username }}/ip-pools.yaml
+
+  - name: Apply Config L2 mode
+    when: baremetal
+    become: false
+    shell: kubectl apply -f /home/{{ node_username }}/l2-advertise.yaml    
+
+
+  # CLEAN UP ---------------------------------------------------------------------------------

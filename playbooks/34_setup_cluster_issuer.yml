@@ -25,7 +25,7 @@
     when: ansible_distribution != "Ubuntu"
     fail:
       msg: "This script is designed for Ubuntu"
-      
+
   # PRE-CONFIG -------------------------------------------------------------------------------
   - name: Whoami on the node?
     become: false
@@ -37,27 +37,32 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   # BEGIN ------------------------------------------------------------------------------------
-  - name: Download Metrics Server Components.
-    get_url:
-      url: "https://github.com/kubernetes-sigs/metrics-server/releases/download/{{ metrics_server_version }}/components.yaml"
-      dest: "/home/{{ node_username }}/metrics_server_components.yaml"
+  - name: Create an empty manifest file.
+    copy:
+      content: ""
+      dest: /home/{{ node_username }}/cluster-issuer.yaml
+      force: false
 
-  - name: Configure Metrics Server to work without TLS verification.
+  - name: Init Cluster Issuer Config
     blockinfile:
-      path: "/home/{{ node_username }}/metrics_server_components.yaml"
-      insertafter: "- args:"
-      block: "        - --kubelet-insecure-tls"
+      path: /home/{{ node_username }}/cluster-issuer.yaml
+      block: |
+            apiVersion: cert-manager.io/v1
+            kind: ClusterIssuer
+            metadata:
+              name: http-issuer
+            spec:
+              acme:
+                server: https://acme-staging-v02.api.letsencrypt.org/directory
+                privateKeySecretRef:
+                  name: http-challenge-secrets
+                solvers:
+                - http01:
+                    ingress:
+                      ingressClassName: nginx
 
-  - name: Install Metrics Server.
-    become: true
-    become_user: "{{ node_username }}"
-    shell: "kubectl apply -f /home/{{ node_username }}/metrics_server_components.yaml >> /home/{{ node_username }}/logs/metrics_server_setup.log"
-    args:
-      chdir: "/home/{{ node_username }}"
-      creates: metrics_server_setup.log
-  
-  # TODO:- add Kubernetes CA authority to kube-system as a config map
-  #        and mount that onto the pod, that way you don't need to 
-  #        skip the TLS verification.
+  - name: Apply Cluster Issuer Config
+    become: false
+    shell: "kubectl apply -f /home/{{ node_username }}/cluster-issuer.yaml"
 
   # CLEAN UP ---------------------------------------------------------------------------------

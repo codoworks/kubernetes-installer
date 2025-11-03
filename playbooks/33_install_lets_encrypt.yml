@@ -7,7 +7,7 @@
 ##
 
 # PLAYBOOK CONFIG ----------------------------------------------------------------------------
-- hosts: all
+- hosts: initializing_master_node
   become: true
   gather_facts: true
 
@@ -37,4 +37,26 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   # BEGIN ------------------------------------------------------------------------------------
+  - name: Add Cert Manager Helm Repo
+    become: false
+    shell: helm repo add cert-manager https://charts.jetstack.io
+
+  - name: Update Helm Repo
+    become: false
+    shell: helm repo update
+
+  - name: Pull cert-manager helm chart
+    become: false
+    shell: helm pull cert-manager/cert-manager --version {{ cert_manager_version }} --untar
+    args:
+      chdir: "/home/{{ node_username }}/helm-charts"
+
+  - name: Update config cert-manager helm chart
+    become: false
+    shell: yq -yi '.crds.enabled = true' helm-charts/cert-manager/values.yaml
+
+  - name: Install Cert Manager
+    become: false
+    shell: helm install cert-manager ./helm-charts/cert-manager --namespace cert-manager --create-namespace --values ./helm-charts/cert-manager/values.yaml
+    
   # CLEAN UP ---------------------------------------------------------------------------------

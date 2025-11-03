@@ -85,6 +85,8 @@
         - lsb-release 
         - ca-certificates 
         - uidmap
+        - net-tools
+        - yq
       state: latest
 
   - name: Add Docker's official GPG key.

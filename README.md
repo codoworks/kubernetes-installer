@@ -129,7 +129,19 @@ To test your setup, you can re-run the ping command without a user parameter, wh
 ansible-playbook playbooks/00_ping_inventory.yml
 ```
 
-## Install Kubernetes
+## Install & Configure HAproxy
+
+> Since this cluster is HA, haproxy is needed to load balance kube-api request between multiple master nodes.
+> Please take look on `playbooks/40_install_ha_proxy.yml` and put the master ip address on there. 
+
+1. You can install haproxy using the folllowing scripts
+```
+ansible-playbook playbooks/40_install_ha_proxy.yml
+```
+
+## Install Kubernetess
+
+> Before starting install kubernetes, you may wanna check file `group_vars/all` first, to update some configuration, like pod_network_cidr etc.
 
 > As a rule of thumb, you may wanna update all packages before you start.\
 > To do so, just run `ansible-playbook playbooks/10_update_packages.yml`.
@@ -179,7 +191,10 @@ kube-system   kube-scheduler-k8s-node-01                 1/1     Running   0    
 2. You can now install additional pods 
 ```
 ansible-playbook playbooks/30_install_metrics_server.yml  
-ansible-playbook playbooks/31_install_nginx_ingress.yml  
+ansible-playbook playbooks/31_install_metallb.yml
+ansible-playbook playbooks/32_install_nginx_ingress.yml
+ansible-playbook playbooks/33_install_lets_encrypt.yml
+ansible-playbook playbooks/34_setup_cluster_issuer.yml
 ```
 
 

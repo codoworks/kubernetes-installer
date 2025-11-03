@@ -25,7 +25,7 @@
     when: ansible_distribution != "Ubuntu"
     fail:
       msg: "This script is designed for Ubuntu"
-      
+
   # PRE-CONFIG -------------------------------------------------------------------------------
   - name: Whoami on the node?
     become: false
@@ -37,27 +37,17 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   # BEGIN ------------------------------------------------------------------------------------
-  - name: Download Metrics Server Components.
-    get_url:
-      url: "https://github.com/kubernetes-sigs/metrics-server/releases/download/{{ metrics_server_version }}/components.yaml"
-      dest: "/home/{{ node_username }}/metrics_server_components.yaml"
-
-  - name: Configure Metrics Server to work without TLS verification.
-    blockinfile:
-      path: "/home/{{ node_username }}/metrics_server_components.yaml"
-      insertafter: "- args:"
-      block: "        - --kubelet-insecure-tls"
-
-  - name: Install Metrics Server.
+  - name: Install Helm Tools
     become: true
     become_user: "{{ node_username }}"
-    shell: "kubectl apply -f /home/{{ node_username }}/metrics_server_components.yaml >> /home/{{ node_username }}/logs/metrics_server_setup.log"
-    args:
-      chdir: "/home/{{ node_username }}"
-      creates: metrics_server_setup.log
-  
-  # TODO:- add Kubernetes CA authority to kube-system as a config map
-  #        and mount that onto the pod, that way you don't need to 
-  #        skip the TLS verification.
+    shell: |
+      curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      chmod 700 get_helm.sh
+      sudo ./get_helm.sh
 
+  - name: Create helm chart folder
+    become: false
+    file:
+      path: "/home/{{ node_username }}/helm-charts"
+      state: directory
   # CLEAN UP ---------------------------------------------------------------------------------

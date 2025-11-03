@@ -37,12 +37,26 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   # BEGIN ------------------------------------------------------------------------------------
-  - name: Install Ingress Nginx Controller.
-    become: true
-    become_user: "{{ node_username }}"
-    shell: "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/{{ ingress_nginx_version }}/deploy/static/provider/baremetal/deploy.yaml >> ingress_nginx_setup.log"
+  - name: Add Nginx Helm Repo
+    become: false
+    shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+
+  - name: Update Helm Repo
+    become: false
+    shell: helm repo update
+
+  - name: Pull nginx helm chart
+    become: false
+    shell: helm pull ingress-nginx/ingress-nginx --version {{ nginx_version }} --untar
     args:
-      chdir: "/home/{{ node_username }}"
-      creates: ingress_nginx_setup.log
+      chdir: "/home/{{ node_username }}/helm-charts"
+
+  - name: Update config nginx helm chart
+    become: false
+    shell: yq -yi '.controller.kind = "DaemonSet"' helm-charts/ingress-nginx/values.yaml
+
+  - name: Install nginx helm chart
+    become: false
+    shell: helm install nginx ./helm-charts/ingress-nginx --namespace nginx --create-namespace --values ./helm-charts/ingress-nginx/values.yaml
       
   # CLEAN UP ---------------------------------------------------------------------------------
