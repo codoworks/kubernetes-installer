@@ -1,0 +1,120 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+# Contact:     hello@dexterexplains.com
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: initializing_master_node
+  become: false
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks: 
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  # BEGIN ------------------------------------------------------------------------------------
+
+  # Install Longhorn, this used for dynamic local pvc provisioning to be used by prometheus
+  - name: Add longhorn Helm Repo
+    when: baremetal
+    shell: helm repo add longhorn https://charts.longhorn.io
+
+  - name: Pull longhorn helm chart
+    when: baremetal
+    shell: helm pull longhorn/longhorn --version {{ longhorn_version }} --untar
+    args:
+      chdir: "/home/{{ node_username }}/helm-charts"
+
+  - name: Install longhorn
+    when: baremetal
+    shell: helm upgrade --install longhorn ./helm-charts/longhorn --create-namespace --namespace longhorn-system --values ./helm-charts/longhorn/values.yaml
+  
+  # Install Grafana
+  - name: Add Grafana Helm Repo
+    shell: helm repo add grafana https://grafana.github.io/helm-charts
+
+  - name: Update Helm Repo
+    shell: helm repo update
+
+  - name: Pull grafana helm chart
+    shell: helm pull grafana/grafana --version {{ grafana_version }} --untar
+    args:
+      chdir: "/home/{{ node_username }}/helm-charts"
+
+  - name: Install Grafana
+    shell: helm upgrade --install grafana ./helm-charts/grafana --create-namespace --namespace monitoring --values ./helm-charts/grafana/values.yaml
+  
+  # Install Prometheus
+  - name: Add Prometheus Helm Repo
+    shell: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+  - name: Update Helm Repo
+    shell: helm repo update
+
+  - name: Pull prometheus helm chart
+    shell: helm pull prometheus-community/prometheus --version {{ prometheus_version }} --untar
+    args:
+      chdir: "/home/{{ node_username }}/helm-charts"
+
+  - name: Install prometheus
+    shell: helm upgrade --install prometheus ./helm-charts/prometheus --create-namespace --namespace monitoring --values ./helm-charts/prometheus/values.yaml
+
+  # Install Loki Promtail
+  - name: Pull loki promtail helm chart
+    shell: helm pull grafana/promtail --version {{ loki_promtail_version }} --untar
+    args:
+      chdir: "/home/{{ node_username }}/helm-charts"
+
+  - name: Update config promtail helm chart
+    shell: |
+      yq -yi '.config.clients[0].headers = {"X-Scope-OrgID": "grafana"}' helm-charts/promtail/values.yaml
+
+  - name: Install Promtail
+    shell: helm upgrade --install promtail ./helm-charts/promtail --create-namespace --namespace monitoring --values ./helm-charts/promtail/values.yaml
+
+  # Install Loki
+  - name: Pull loki helm chart
+    shell: helm pull grafana/loki --version {{ loki_version }} --untar
+    args:
+      chdir: "/home/{{ node_username }}/helm-charts"
+  
+  # This is a minimum config for testing, if you want to use as for production, need to change the config like use object storage backend etc.
+  - name: Update config loki helm chart
+    shell: |
+      yq -yi '.deploymentMode = "SingleBinary"' helm-charts/loki/values.yaml
+      yq -yi '.read.replicas = 0' helm-charts/loki/values.yaml
+      yq -yi '.backend.replicas = 0' helm-charts/loki/values.yaml
+      yq -yi '.write.replicas = 0' helm-charts/loki/values.yaml
+      yq -yi '.singleBinary.replicas = 1' helm-charts/loki/values.yaml
+      yq -yi '.singleBinary.persistence.size = "1Gi"' helm-charts/loki/values.yaml
+      yq -yi '.loki.storage.type = "filesystem"' helm-charts/loki/values.yaml
+      yq -yi '.loki.commonConfig.replication_factor = 1' helm-charts/loki/values.yaml
+      yq -yi '.loki.schemaConfig = {"configs": [{"from": "2023-01-01", "store": "tsdb", "object_store": "filesystem", "schema": "v13", "index": {"prefix": "loki_index_", "period": "24h"}}]}' helm-charts/loki/values.yaml
+
+  - name: Install loki
+    shell: helm upgrade --install loki ./helm-charts/loki --create-namespace --namespace monitoring --values ./helm-charts/loki/values.yaml
+        
+  # CLEAN UP ---------------------------------------------------------------------------------

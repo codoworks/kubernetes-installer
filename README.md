@@ -132,7 +132,6 @@ ansible-playbook playbooks/00_ping_inventory.yml
 ## Install & Configure HAproxy
 
 > Since this cluster is HA, haproxy is needed to load balance kube-api request between multiple master nodes.
-> Please take look on `playbooks/40_install_ha_proxy.yml` and put the master ip address on there. 
 
 1. You can install haproxy using the folllowing scripts
 ```
@@ -194,7 +193,7 @@ ansible-playbook playbooks/30_install_metrics_server.yml
 ansible-playbook playbooks/31_install_metallb.yml
 ansible-playbook playbooks/32_install_nginx_ingress.yml
 ansible-playbook playbooks/33_install_lets_encrypt.yml
-ansible-playbook playbooks/34_setup_cluster_issuer.yml
+ansible-playbook playbooks/34_install_grafana_prometheus_loki.yml
 ```
 
 

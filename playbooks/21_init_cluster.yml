@@ -60,6 +60,10 @@
             kind: KubeletConfiguration
             apiVersion: kubelet.config.k8s.io/v1beta1
             runtimeRequestTimeout: "15m"
+            tlsCipherSuites:
+              - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+              - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+              - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
             cgroupDriver: "systemd"
             systemReserved:
               cpu: 100m
@@ -99,13 +103,19 @@
     fetch: 
       fail_on_missing: true
       flat: true
-      src: /home/ansible/.kube/config
+      src: "/home/{{ node_username }}/.kube/config"
       dest: "{{ playbook_dir + '/temp/config' }}"
   
   - name: Update pods CIDR on calico manifests file
     shell: |
       curl -sO https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
       sed -i 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|g; s|#   value: "192.168.0.0/16"|  value: "'"{{ pod_network_cidr }}"'"|g' calico.yaml
+
+  - name: Update pods CIDR on calico manifests file
+    when: azure
+    shell: |
+      sed -i '/- name: CALICO_IPV4POOL_IPIP/,+1 s/value:.*/value: "Never"/' calico.yaml
+      sed -i '/- name: CALICO_IPV4POOL_VXLAN/,+1 s/value:.*/value: "Always"/' calico.yaml
 
   - name: Install Calico pod network.
     become: true

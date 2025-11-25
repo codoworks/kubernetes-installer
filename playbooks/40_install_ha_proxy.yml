@@ -124,9 +124,9 @@
             backend kubernetes-masters
               mode tcp
               balance roundrobin
-              server master1 {{ put master ip here }}:6443 check
-              server master2 {{ put master ip here }}:6443 check
-              server master3 {{ put master ip here }}:6443 check
+            {% for host in groups['k8s_masters'] %}
+              server {{ hostvars[host].inventory_hostname }} {{ hostvars[host].ansible_host | default(host) }}:6443 check
+            {% endfor %}
 
   - name: Enable and start haproxy service.
     systemd: 

@@ -8,7 +8,7 @@
 
 # PLAYBOOK CONFIG ----------------------------------------------------------------------------
 - hosts: initializing_master_node
-  become: true
+  become: false
   gather_facts: true
 
   # VAR PROMPTS ------------------------------------------------------------------------------
@@ -37,55 +37,58 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   # BEGIN ------------------------------------------------------------------------------------
-  # - name: Install MetalLB For LoadBalancer Controller
-  #   when: baremetal
-  #   become: false
-  #   shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
-
-  - name: Create An Empty Ip Pools Config
-    copy:
-      content: ""
-      dest: /home/{{ node_username }}/ip-pools.yaml
-      force: false
-
-  - name: Update Config IP Pools LoadBalancer
-    blockinfile:
-      path: /home/{{ node_username }}/ip-pools.yaml
-      block: |
-            apiVersion: metallb.io/v1beta1
-            kind: IPAddressPool
-            metadata:
-              name: first-pool
-              namespace: metallb-system
-            spec:
-              addresses:
-              - {{ loadbalancer_ip_pools }}
-
-  - name: Create An Empty l2 metllb config
-    copy:
-      content: ""
-      dest: /home/{{ node_username }}/l2-advertise.yaml
-      force: false
-
-  - name: Update Config IP Pools LoadBalancer
-    blockinfile:
-      path: /home/{{ node_username }}/l2-advertise.yaml
-      block: |
-            apiVersion: metallb.io/v1beta1
-            kind: L2Advertisement
-            metadata:
-              name: l2-mode
-              namespace: metallb-system    
-
-  - name: Apply Config Ip Pools For LoadBalancer IP address
-    when: baremetal
-    become: false
-    shell: sleep 60 && kubectl apply -f /home/{{ node_username }}/ip-pools.yaml
-
-  - name: Apply Config L2 mode
-    when: baremetal
-    become: false
-    shell: kubectl apply -f /home/{{ node_username }}/l2-advertise.yaml    
+  - name: Install and configure metallb
+    when: use_metallb
+    block: 
+      - name: Download Metrics Server Components.
+        get_url:
+          url: "https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml"
+          dest: "/home/{{ node_username }}/metallb-native.yaml"
+    
+      - name: Install MetalLB For LoadBalancer Controller
+        become: false
+        shell: kubectl apply -f metallb-native.yaml
+    
+      - name: Create An Empty Ip Pools Config
+        copy:
+          content: ""
+          dest: /home/{{ node_username }}/ip-pools.yaml
+          force: false
+    
+      - name: Update Config IP Pools LoadBalancer
+        blockinfile:
+          path: /home/{{ node_username }}/ip-pools.yaml
+          block: |
+                apiVersion: metallb.io/v1beta1
+                kind: IPAddressPool
+                metadata:
+                  name: first-pool
+                  namespace: metallb-system
+                spec:
+                  addresses:
+                  - {{ loadbalancer_ip_pools }}
+    
+      - name: Create An Empty l2 metallb config
+        copy:
+          content: ""
+          dest: /home/{{ node_username }}/l2-advertise.yaml
+          force: false
+    
+      - name: Update Config IP Pools LoadBalancer
+        blockinfile:
+          path: /home/{{ node_username }}/l2-advertise.yaml
+          block: |
+                apiVersion: metallb.io/v1beta1
+                kind: L2Advertisement
+                metadata:
+                  name: l2-mode
+                  namespace: metallb-system    
+    
+      - name: Apply Config Ip Pools For LoadBalancer IP address
+        shell: sleep 60 && kubectl apply -f /home/{{ node_username }}/ip-pools.yaml
+    
+      - name: Apply Config L2 mode
+        shell: kubectl apply -f /home/{{ node_username }}/l2-advertise.yaml    
 
 
   # CLEAN UP ---------------------------------------------------------------------------------

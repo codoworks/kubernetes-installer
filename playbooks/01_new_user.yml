@@ -7,7 +7,7 @@
 ##
 
 # PLAYBOOK CONFIG ----------------------------------------------------------------------------
-- hosts: all
+- hosts: all, !k8s_masters
   become: true
   gather_facts: true
 

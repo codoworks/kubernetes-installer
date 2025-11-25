@@ -53,10 +53,40 @@
 
   - name: Update config cert-manager helm chart
     become: false
-    shell: yq -yi '.crds.enabled = true' helm-charts/cert-manager/values.yaml
+    shell: |
+      yq -yi '.crds.enabled = true' helm-charts/cert-manager/values.yaml
+      #add feature gate exact http false
 
   - name: Install Cert Manager
     become: false
     shell: helm install cert-manager ./helm-charts/cert-manager --namespace cert-manager --create-namespace --values ./helm-charts/cert-manager/values.yaml
-    
+
+  - name: Create an empty manifest file.
+    copy:
+      content: ""
+      dest: /home/{{ node_username }}/cluster-issuer.yaml
+      force: false
+
+  - name: Init Cluster Issuer Config
+    blockinfile:
+      path: /home/{{ node_username }}/cluster-issuer.yaml
+      block: |
+            apiVersion: cert-manager.io/v1
+            kind: ClusterIssuer
+            metadata:
+              name: http-issuer
+            spec:
+              acme:
+                server: https://acme-v02.api.letsencrypt.org/directory
+                privateKeySecretRef:
+                  name: http-challenge-secrets
+                solvers:
+                - http01:
+                    ingress:
+                      ingressClassName: nginx
+
+  - name: Apply Cluster Issuer Config
+    become: false
+    shell: "kubectl apply -f /home/{{ node_username }}/cluster-issuer.yaml"
+        
   # CLEAN UP ---------------------------------------------------------------------------------

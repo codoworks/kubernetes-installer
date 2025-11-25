@@ -53,7 +53,12 @@
 
   - name: Update config nginx helm chart
     become: false
-    shell: yq -yi '.controller.kind = "DaemonSet"' helm-charts/ingress-nginx/values.yaml
+    shell: |
+      yq -yi '.controller.kind = "DaemonSet"' helm-charts/ingress-nginx/values.yaml
+      yq -yi '.controller.service.externalIPs += {{ worker_ips | to_nice_json }}' helm-charts/ingress-nginx/values.yaml
+
+    vars:
+      worker_ips: "{{ groups['worker_nodes'] | map('extract', hostvars, 'inventory_hostname') | list }}"
 
   - name: Install nginx helm chart
     become: false
