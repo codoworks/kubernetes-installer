@@ -7,7 +7,7 @@
 ##
 
 # PLAYBOOK CONFIG ----------------------------------------------------------------------------
-- hosts: all
+- hosts: all, !ha_proxy_node, !k8s_masters
   become: true
   gather_facts: true
   
@@ -72,6 +72,10 @@
   - name: Apply sysctl.d config without rebooting.
     command: sysctl --system
 
+  - name: Update apt cache
+    ansible.builtin.apt:
+      update_cache: true
+
   - name: Install dependency packages required for kubernetes.
     apt:
       name: 
@@ -85,6 +89,8 @@
         - lsb-release 
         - ca-certificates 
         - uidmap
+        - net-tools
+        - yq
       state: latest
 
   - name: Add Docker's official GPG key.
@@ -169,11 +175,11 @@
       state: present
 
   # CLEAN UP ---------------------------------------------------------------------------------
-  - name: Reboot node.
-    reboot:
-      msg: "Reboot initiated by Ansible"
-      connect_timeout: 5
-      reboot_timeout: 3600
-      pre_reboot_delay: 0
-      post_reboot_delay: 30
-      test_command: whoami
+  # - name: Reboot node.
+  #   reboot:
+  #     msg: "Reboot initiated by Ansible"
+  #     connect_timeout: 5
+  #     reboot_timeout: 3600
+  #     pre_reboot_delay: 0
+  #     post_reboot_delay: 30
+  #     test_command: whoami

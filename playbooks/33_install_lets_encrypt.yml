@@ -1,0 +1,92 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+# Contact:     hello@dexterexplains.com
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: initializing_master_node
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks: 
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Add Cert Manager Helm Repo
+    become: false
+    shell: helm repo add cert-manager https://charts.jetstack.io
+
+  - name: Update Helm Repo
+    become: false
+    shell: helm repo update
+
+  - name: Pull cert-manager helm chart
+    become: false
+    shell: helm pull cert-manager/cert-manager --version {{ cert_manager_version }} --untar
+    args:
+      chdir: "/home/{{ node_username }}/helm-charts"
+
+  - name: Update config cert-manager helm chart
+    become: false
+    shell: |
+      yq -yi '.crds.enabled = true' helm-charts/cert-manager/values.yaml
+      #add feature gate exact http false
+
+  - name: Install Cert Manager
+    become: false
+    shell: helm install cert-manager ./helm-charts/cert-manager --namespace cert-manager --create-namespace --values ./helm-charts/cert-manager/values.yaml
+
+  - name: Create an empty manifest file.
+    copy:
+      content: ""
+      dest: /home/{{ node_username }}/cluster-issuer.yaml
+      force: false
+
+  - name: Init Cluster Issuer Config
+    blockinfile:
+      path: /home/{{ node_username }}/cluster-issuer.yaml
+      block: |
+            apiVersion: cert-manager.io/v1
+            kind: ClusterIssuer
+            metadata:
+              name: http-issuer
+            spec:
+              acme:
+                server: https://acme-v02.api.letsencrypt.org/directory
+                privateKeySecretRef:
+                  name: http-challenge-secrets
+                solvers:
+                - http01:
+                    ingress:
+                      ingressClassName: nginx
+
+  - name: Apply Cluster Issuer Config
+    become: false
+    shell: "kubectl apply -f /home/{{ node_username }}/cluster-issuer.yaml"
+        
+  # CLEAN UP ---------------------------------------------------------------------------------

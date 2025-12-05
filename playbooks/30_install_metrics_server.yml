@@ -51,7 +51,7 @@
   - name: Install Metrics Server.
     become: true
     become_user: "{{ node_username }}"
-    shell: "kubectl apply -f /home/{{ node_username }}/metrics_server_components.yaml >> metrics_server_setup.log"
+    shell: "kubectl apply -f /home/{{ node_username }}/metrics_server_components.yaml >> /home/{{ node_username }}/logs/metrics_server_setup.log"
     args:
       chdir: "/home/{{ node_username }}"
       creates: metrics_server_setup.log

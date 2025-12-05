@@ -7,7 +7,7 @@
 ##
 
 # PLAYBOOK CONFIG ----------------------------------------------------------------------------
-- hosts: all
+- hosts: initializing_master_node
   become: true
   gather_facts: true
 
@@ -37,4 +37,17 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   # BEGIN ------------------------------------------------------------------------------------
+  - name: Install Helm Tools
+    become: true
+    become_user: "{{ node_username }}"
+    shell: |
+      curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      chmod 700 get_helm.sh
+      sudo ./get_helm.sh
+
+  - name: Create helm chart folder
+    become: false
+    file:
+      path: "/home/{{ node_username }}/helm-charts"
+      state: directory
   # CLEAN UP ---------------------------------------------------------------------------------

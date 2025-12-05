@@ -1,0 +1,65 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+# Contact:     hello@dexterexplains.com
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: all,!ha_proxy_node, !k8s_masters
+  become: true
+  gather_facts: true
+  
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: no # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu"
+    fail:
+      msg: "This script is designed for Ubuntu"
+    
+  # PRE-CONFIG -------------------------------------------------------------------------------
+
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Update kubelet daemon file permission
+    shell: chmod 600 /lib/systemd/system/kubelet.service
+
+  - name: Update kuebelet config file permission
+    shell: chmod 600 /var/lib/kubelet/config.yaml
+
+  - name: Create kubelet config folder
+    file:
+      path: "/etc/systemd/system/kubelet.service.d"
+      state: directory
+
+  - name: Create an empty kubelet extra conf file
+    copy:
+      content: ""
+      dest: /etc/systemd/system/kubelet.service.d/99-security.conf
+      force: false  
+
+  - name: Configuring kubelet to whitelist some ip
+    blockinfile:
+      path: /etc/systemd/system/kubelet.service.d/99-security.conf
+      block: |
+            [Service]
+            IPAddressDeny=any
+            IPAddressAllow=127.0.0.1 localhost link-local {{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }} {{ pod_network_cidr}} {{ k8s_svc_network_cidr }} {{ control_plane_endpoint }} {% for host in groups['k8s_masters'] %} {{ hostvars[host].ansible_host | default(host) }} {% endfor %} 
+
+  - name: Reload daemon and reload kubelet
+    systemd: 
+      name: kubelet
+      state: restarted
+      enabled: true
+      daemon-reload: true
+
+  # CLEAN UP ---------------------------------------------------------------------------------

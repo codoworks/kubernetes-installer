@@ -53,11 +53,17 @@
             kind: ClusterConfiguration
             apiVersion: kubeadm.k8s.io/v1beta4
             networking:
-              podSubnet: "192.168.0.0/16"
+              podSubnet: "{{ pod_network_cidr}}"
+              serviceSubnet: "{{ k8s_svc_network_cidr }}"
+            controlPlaneEndpoint: "{{ control_plane_endpoint }}:6443"
             ---
             kind: KubeletConfiguration
             apiVersion: kubelet.config.k8s.io/v1beta1
             runtimeRequestTimeout: "15m"
+            tlsCipherSuites:
+              - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+              - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+              - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
             cgroupDriver: "systemd"
             systemReserved:
               cpu: 100m
@@ -68,11 +74,17 @@
             enforceNodeAllocatable:
             - pods
 
+  - name: Create logs folder
+    become: false
+    file:
+      path: "/home/{{ node_username }}/logs"
+      state: directory
+
   - name: Initialize a Kubernetes cluster.
-    shell: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml --upload-certs >> cluster_initialized.log
+    shell: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml --upload-certs >> /home/{{ node_username }}/logs/cluster_initialized.log
     args:
       chdir: "/home/{{ node_username }}"
-      creates: cluster_initialized.log
+      creates: logs/cluster_initialized.log
   
   - name: Create $HOME/.kube directory.
     file:
@@ -91,13 +103,24 @@
     fetch: 
       fail_on_missing: true
       flat: true
-      src: /home/ansible/.kube/config
+      src: "/home/{{ node_username }}/.kube/config"
       dest: "{{ playbook_dir + '/temp/config' }}"
   
+  - name: Update pods CIDR on calico manifests file
+    shell: |
+      curl -sO https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
+      sed -i 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|g; s|#   value: "192.168.0.0/16"|  value: "'"{{ pod_network_cidr }}"'"|g' calico.yaml
+
+  - name: Update pods CIDR on calico manifests file
+    when: azure
+    shell: |
+      sed -i '/- name: CALICO_IPV4POOL_IPIP/,+1 s/value:.*/value: "Never"/' calico.yaml
+      sed -i '/- name: CALICO_IPV4POOL_VXLAN/,+1 s/value:.*/value: "Always"/' calico.yaml
+
   - name: Install Calico pod network.
     become: true
     become_user: "{{ node_username }}"
-    shell: "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml >> pod_network_setup.log"
+    shell: "kubectl apply -f calico.yaml >> /home/{{ node_username }}/logs/pod_network_setup.log"
     args:
       chdir: "/home/{{ node_username }}"
       creates: pod_network_setup.log
@@ -108,12 +131,24 @@
 
   - name: Set workers join command as a fact.
     set_fact:
-      join_command: "{{ workers_join_command_raw.stdout_lines[0] }}"
+      worker_join_command: "{{ workers_join_command_raw.stdout_lines[0] }}"
+
+  - name: Create master join command
+    shell: kubeadm token create --print-join-command --certificate-key $(kubeadm init phase upload-certs --upload-certs | tail -1)
+    register: master_join_command_raw
+
+  - name: Set Master Join command
+    set_fact:
+      master_join_command: "{{ master_join_command_raw.stdout_lines[0] }}"
   
   # CLEAN UP ---------------------------------------------------------------------------------
   - name: Display workers join command.
     ansible.builtin.debug:
-      msg: "{{ join_command }}"
+      msg: "{{ worker_join_command }}"
+
+  - name: Display master join command.
+    ansible.builtin.debug:
+      msg: "{{ master_join_command }}"      
 
 
 # OTHER MASTER NODES -------------------------------------------------------------------------
@@ -152,11 +187,17 @@
     wait_for: "host={{ groups['initializing_master_node'][0] }} port=6443 timeout=1"
 
   # BEGIN ------------------------------------------------------------------------------------
+  - name: Create logs folder
+    become: false
+    file:
+      path: "/home/{{ node_username }}/logs"
+      state: directory
+
   - name: Join the cluster as a control-plane.
-    shell: "{{ hostvars[groups['initializing_master_node'][0]].join_command }} --control-plane >> node_joined.log"
+    shell: "{{ hostvars[groups['initializing_master_node'][0]].master_join_command }} >> /home/{{ node_username }}/logs/node_joined.log"
     args:
       chdir: "/home/{{ node_username }}"
-      creates: node_joined.log
+      creates: logs/node_joined.log
 
   # CLEAN UP ---------------------------------------------------------------------------------
   # 
@@ -198,11 +239,17 @@
     wait_for: "host={{ groups['initializing_master_node'][0] }} port=6443 timeout=1"
 
   # BEGIN ------------------------------------------------------------------------------------
+  - name: Create logs folder
+    become: false
+    file:
+      path: "/home/{{ node_username }}/logs"
+      state: directory
+
   - name: Join the cluster as a worker node.
-    shell: "{{ hostvars[groups['initializing_master_node'][0]].join_command }} >> node_joined.log"
+    shell: "{{ hostvars[groups['initializing_master_node'][0]].worker_join_command }} >> /home/{{ node_username }}/logs/node_joined.log"
     args:
       chdir: "/home/{{ node_username }}"
-      creates: node_joined.log
+      creates: logs/node_joined.log
 
   # CLEAN UP ---------------------------------------------------------------------------------
   # 
