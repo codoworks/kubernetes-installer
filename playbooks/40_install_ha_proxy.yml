@@ -22,7 +22,7 @@
   tasks: 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 
@@ -37,6 +37,7 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   - name: Ensure dependency packages required for HA Proxy are installed.
+    when: ansible_distribution == "Ubuntu"
     apt:
       name: 
         - software-properties-common 
@@ -58,24 +59,25 @@
   #     force_apt_get: true
 
   - name: Install HA Proxy packages.
+    when: ansible_distribution == "Ubuntu"
     apt:
       name: 
         - haproxy={{ ha_proxy_version }}
       state: present
 
+  - name: Install specific HAProxy version using DNF
+    when: ansible_distribution == "RedHat"
+    dnf:
+      name: "haproxy"
+      state: present
+
   - name: Configure HA Proxy.
+    when: ansible_distribution == "Ubuntu"
     lineinfile:
       dest: /etc/default/haproxy
       regexp: "^ENABLED.+$"
       line: "ENABLED=1"
       state: present
-
-  - name: Enable and start haproxy service.
-    systemd: 
-      name: haproxy
-      state: restarted
-      enabled: true
-      daemon-reload: true
 
   - name: Backup default configuration files
     shell: "mv /etc/haproxy/haproxy.cfg /etc/haproxy/default-config.backup"
@@ -87,6 +89,7 @@
       force: false
 
   - name: Init haproxy config
+    when: ansible_distribution == "Ubuntu"
     blockinfile:
       path: /etc/haproxy/haproxy.cfg
       block: |
@@ -128,9 +131,110 @@
               server {{ hostvars[host].inventory_hostname }} {{ hostvars[host].ansible_host | default(host) }}:6443 check
             {% endfor %}
 
+  - name: Init haproxy config
+    when: ansible_distribution == "RedHat"
+    blockinfile:
+      path: /etc/haproxy/haproxy.cfg
+      block: |
+        #---------------------------------------------------------------------
+        # Example configuration for a possible web application.  See the
+        # full configuration options online.
+        #
+        #   https://www.haproxy.org/download/1.8/doc/configuration.txt
+        #
+        #---------------------------------------------------------------------
+        
+        #---------------------------------------------------------------------
+        # Global settings
+        #---------------------------------------------------------------------
+        global
+            # to have these messages end up in /var/log/haproxy.log you will
+            # need to:
+            #
+            # 1) configure syslog to accept network log events.  This is done
+            #    by adding the '-r' option to the SYSLOGD_OPTIONS in
+            #    /etc/sysconfig/syslog
+            #
+            # 2) configure local2 events to go to the /var/log/haproxy.log
+            #   file. A line like the following can be added to
+            #   /etc/sysconfig/syslog
+            #
+            #    local2.*                       /var/log/haproxy.log
+            #
+            log         127.0.0.1 local2
+        
+            chroot      /var/lib/haproxy
+            pidfile     /var/run/haproxy.pid
+            maxconn     4000
+            user        haproxy
+            group       haproxy
+            daemon
+        
+            # turn on stats unix socket
+            stats socket /var/lib/haproxy/stats
+        
+            # utilize system-wide crypto-policies
+            ssl-default-bind-ciphers PROFILE=SYSTEM
+            ssl-default-server-ciphers PROFILE=SYSTEM
+        
+        #---------------------------------------------------------------------
+        # common defaults that all the 'listen' and 'backend' sections will
+        # use if not designated in their block
+        #---------------------------------------------------------------------
+        defaults
+            mode                    http
+            log                     global
+            option                  httplog
+            option                  dontlognull
+            option http-server-close
+            option forwardfor       except 127.0.0.0/8
+            option                  redispatch
+            retries                 3
+            timeout http-request    10s
+            timeout queue           1m
+            timeout connect         10s
+            timeout client          1m
+            timeout server          1m
+            timeout http-keep-alive 10s
+            timeout check           10s
+            maxconn                 3000
+        
+        #---------------------------------------------------------------------
+        # main frontend which proxys to the backends
+        #---------------------------------------------------------------------
+        frontend kubernetes_masters
+            mode tcp
+            bind *:6443
+            default_backend             kubernetes_masters
+        
+        #---------------------------------------------------------------------
+        # static backend for serving up images, stylesheets and such
+        #---------------------------------------------------------------------
+        # backend static
+        #     balance     roundrobin
+        #     server      static 127.0.0.1:4331 check
+        
+        #---------------------------------------------------------------------
+        # round robin balancing between the various backends
+        #---------------------------------------------------------------------
+        backend kubernetes_masters
+            mode tcp
+            balance     roundrobin
+            {% for host in groups['k8s_masters'] %}
+            server {{ hostvars[host].inventory_hostname }} {{ hostvars[host].ansible_host | default(host) }}:6443 check
+            {% endfor %}
+
+  - name: Disable selinux in RedHat
+    when: ansible_distribution == "RedHat"
+    shell: | 
+      setenforce 0
+      sed -i --follow-symlinks 's/SELINUX=enforcing/SELINUX=permissive/g' /etc/sysconfig/selinux
+
   - name: Enable and start haproxy service.
     systemd: 
       name: haproxy
+      enabled: true
       state: restarted
+      daemon-reload: true
 
   # CLEAN UP ---------------------------------------------------------------------------------

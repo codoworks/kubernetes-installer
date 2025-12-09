@@ -23,7 +23,7 @@
 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
     
@@ -39,6 +39,10 @@
       regexp: '^(\s*)([^#\n]+\s+)(\w+\s+)swap(\s+.*)$'
       replace: '#\1\2\3swap\4'
       backup: true
+  
+  - name: Install kernel headers RedHat
+    when: ansible_distribution == "RedHat"
+    shell: dnf install kernel-devel-$(uname -r) -y
 
   # BEGIN ------------------------------------------------------------------------------------
   - name: (Re)Create an empty kubernetes sysctl.d file. #this is important so that if it ran again it will overwrite and not append.
@@ -63,20 +67,47 @@
       force: false
 
   - name: Configure containerd module. # this goes together with the above 
+    when: ansible_distribution == "Ubuntu"
     blockinfile:
       path: /etc/modules-load.d/containerd.conf 
       block: |
         overlay
         br_netfilter
 
+  - name: Configure containerd module.
+    when: ansible_distribution == "RedHat"
+    shell: |
+      modprobe br_netfilter
+      modprobe ip_vs
+      modprobe ip_vs_rr
+      modprobe ip_vs_wrr
+      modprobe ip_vs_sh
+      modprobe overlay      
+
+  - name: Configure containerd module.
+    when: ansible_distribution == "RedHat"
+    blockinfile:
+      path: /etc/modules-load.d/containerd.conf 
+      block: |
+        br_netfilter
+        ip_vs
+        ip_vs_rr
+        ip_vs_wrr
+        ip_vs_sh
+        overlay
+
   - name: Apply sysctl.d config without rebooting.
     command: sysctl --system
 
+
+  ############### UBUNTU SETUP SECTION ###############
   - name: Update apt cache
+    when: ansible_distribution == "Ubuntu"
     ansible.builtin.apt:
       update_cache: true
 
   - name: Install dependency packages required for kubernetes.
+    when: ansible_distribution == "Ubuntu"
     apt:
       name: 
         - curl 
@@ -94,6 +125,7 @@
       state: latest
 
   - name: Add Docker's official GPG key.
+    when: ansible_distribution == "Ubuntu"
     get_url:
       url: https://download.docker.com/linux/ubuntu/gpg
       dest: /etc/apt/keyrings/docker-apt-keyring.asc
@@ -101,16 +133,19 @@
       force: true
 
   - name: Add Docker APT Repository.
+    when: ansible_distribution == "Ubuntu"
     apt_repository:
       repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} signed-by=/etc/apt/keyrings/docker-apt-keyring.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
       state: present
 
   - name: Add Google's official GPG key.
+    when: ansible_distribution == "Ubuntu"
     apt_key:
       url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
       state: present
 
   - name: Add Kubernetes apt-key.
+    when: ansible_distribution == "Ubuntu"
     get_url:
       url: "https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/deb/Release.key"
       dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
@@ -118,12 +153,14 @@
       force: true
 
   - name: Add Kubernetes APT repository.
+    when: ansible_distribution == "Ubuntu"
     apt_repository:
       repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/deb/ /"
       state: present
       update_cache: true
 
   - name: Full system update.
+    when: ansible_distribution == "Ubuntu"
     apt:
       update_cache: true
       upgrade: dist
@@ -131,6 +168,7 @@
       force_apt_get: true
   
   - name: Install container.d.
+    when: ansible_distribution == "Ubuntu"
     apt:
       name: containerd.io
       state: present
@@ -145,12 +183,42 @@
       path: "/etc/containerd/default_bin_config.toml"
     register: containerd_result
 
+  ############### RedHat SETUP SECTION ###############
+  - name: Add Docker CE repository using dnf config-manager
+    when: ansible_distribution == "RedHat"
+    ansible.builtin.command: dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    args:
+      creates: /etc/yum.repos.d/docker-ce.repo
+      
+  - name: Run dnf makecache to synchronize new repository data
+    when: ansible_distribution == "RedHat"
+    ansible.builtin.dnf:
+      state: latest
+      enablerepo: docker-ce
+      update_cache: yes
+
+  - name: Add epel repo for yq
+    when: ansible_distribution == "RedHat"
+    shell: |
+      dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm -y
+      dnf upgrade -y
+
+  - name: Install requirement on RedHat
+    when: ansible_distribution == "RedHat"
+    ansible.builtin.dnf:
+      name:
+        - containerd.io
+        - git
+        - yq
+      state: present
+      update_cache: yes   
+
   - name: Configure container.d.
     when: not containerd_result.stat.exists
     shell: /usr/bin/containerd config default > /etc/containerd/default_bin_config.toml && cp /etc/containerd/default_bin_config.toml /etc/containerd/config.toml
     args:
       creates: 
-        - /etc/containerd/default_bin_config.toml
+        - /etc/containerd/default_bin_config.tomlThis
         - /etc/containerd/config.toml
   
   - name: Configure system.d cgroup driver for container.d
@@ -164,15 +232,56 @@
       name: containerd
       state: restarted
       enabled: true
-      daemon-reload: true
+      daemon-reload: true  
   
   - name: Install kubernetes packages.
+    when: ansible_distribution == "Ubuntu"
     apt:
       name: 
         - kubelet={{ k8s_version }}
         - kubeadm={{ k8s_version }}
         - kubectl={{ k8s_version }}
       state: present
+
+  - name: Ensure firewalld is stopped
+    ansible.builtin.systemd:
+      name: firewalld
+      state: stopped
+
+  - name: Disable firewalld from starting on boot
+    ansible.builtin.systemd:
+      name: firewalld
+      enabled: no
+
+  - name: Mask firewalld to prevent manual or dependency-based restart
+    ansible.builtin.systemd:
+      name: firewalld
+      masked: yes
+      
+  - name: Add kubernetes repository
+    when: ansible_distribution == "RedHat"
+    shell: | 
+      cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+      [kubernetes]
+      name=Kubernetes
+      baseurl=https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/rpm/
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/rpm/repodata/repomd.xml.key
+      exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+      EOF
+  
+  - name: Update repo & install kubernetes component
+    when: ansible_distribution == "RedHat"
+    shell: |
+      dnf makecache; dnf install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+
+  - name: Enable and start kubelet service.
+    systemd: 
+      name: kubelet
+      state: restarted
+      enabled: true
+      daemon-reload: true          
 
   # CLEAN UP ---------------------------------------------------------------------------------
   # - name: Reboot node.
