@@ -22,7 +22,7 @@
   tasks: 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 
@@ -43,7 +43,7 @@
     shell: |
       curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
       chmod 700 get_helm.sh
-      sudo ./get_helm.sh
+      ./get_helm.sh
 
   - name: Create helm chart folder
     become: false

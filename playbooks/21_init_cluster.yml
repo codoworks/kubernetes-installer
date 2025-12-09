@@ -25,7 +25,7 @@
   
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 
@@ -169,7 +169,7 @@
 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 
@@ -221,7 +221,7 @@
 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 

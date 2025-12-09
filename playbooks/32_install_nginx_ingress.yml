@@ -22,7 +22,7 @@
   tasks: 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 
@@ -52,13 +52,40 @@
       chdir: "/home/{{ node_username }}/helm-charts"
 
   - name: Update config nginx helm chart
+    when: use_metallb == false and ansible_distribution == "Ubuntu"
     become: false
     shell: |
       yq -yi '.controller.kind = "DaemonSet"' helm-charts/ingress-nginx/values.yaml
+      yq -yi '.controller.service.type = "LoadBalancer' helm-charts/ingress-nginx/values.yaml
       yq -yi '.controller.service.externalIPs += {{ worker_ips | to_nice_json }}' helm-charts/ingress-nginx/values.yaml
 
     vars:
       worker_ips: "{{ groups['worker_nodes'] | map('extract', hostvars, 'inventory_hostname') | list }}"
+
+  - name: Update config nginx helm chart
+    when: use_metallb == false and ansible_distribution == "RedHat"
+    become: false
+    shell: |
+      yq -i '.controller.kind = "DaemonSet"' helm-charts/ingress-nginx/values.yaml
+      yq -i '.controller.service.type = "LoadBalancer' helm-charts/ingress-nginx/values.yaml
+      yq -i '.controller.service.externalIPs += {{ worker_ips | to_nice_json }}' helm-charts/ingress-nginx/values.yaml
+      
+    vars:
+      worker_ips: "{{ groups['worker_nodes'] | map('extract', hostvars, 'inventory_hostname') | list }}"
+
+  - name: Update config nginx helm chart
+    when: use_metallb == true and ansible_distribution == "Ubuntu"
+    become: false
+    shell: |
+      yq -yi '.controller.kind = "DaemonSet"' helm-charts/ingress-nginx/values.yaml
+      yq -yi '.controller.service.type = "LoadBalancer' helm-charts/ingress-nginx/values.yaml
+
+  - name: Update config nginx helm chart
+    when: use_metallb == true and ansible_distribution == "RedHat"
+    become: false
+    shell: |
+      yq -i '.controller.kind = "DaemonSet"' helm-charts/ingress-nginx/values.yaml
+      yq -i '.controller.service.type = "LoadBalancer' helm-charts/ingress-nginx/values.yaml
 
   - name: Install nginx helm chart
     become: false
