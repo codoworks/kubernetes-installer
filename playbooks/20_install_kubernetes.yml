@@ -244,16 +244,19 @@
       state: present
 
   - name: Ensure firewalld is stopped
+    when: ansible_distribution == "RedHat"
     ansible.builtin.systemd:
       name: firewalld
       state: stopped
 
   - name: Disable firewalld from starting on boot
+    when: ansible_distribution == "RedHat"
     ansible.builtin.systemd:
       name: firewalld
       enabled: no
 
   - name: Mask firewalld to prevent manual or dependency-based restart
+    when: ansible_distribution == "RedHat"
     ansible.builtin.systemd:
       name: firewalld
       masked: yes
