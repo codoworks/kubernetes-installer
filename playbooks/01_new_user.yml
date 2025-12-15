@@ -22,13 +22,14 @@
 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
   
   # PRE-CONFIG -------------------------------------------------------------------------------
   # BEGIN ------------------------------------------------------------------------------------
   - name: Creating the user {{ new_username }}.
+    when: ansible_distribution == "Ubuntu"
     user:
       name: "{{ new_username }}"
       createhome: true
@@ -39,6 +40,19 @@
       - root
       - sudo
       state: present  
+
+  - name: Creating the user {{ new_username }}.
+    when: ansible_distribution == "RedHat"
+    user:
+      name: "{{ new_username }}"
+      createhome: true
+      shell: /bin/bash
+      append: true
+      groups: 
+      - users
+      - root
+      - wheel
+      state: present        
 
   - name: Create a dedicated sudo entry file for the user.
     file:
