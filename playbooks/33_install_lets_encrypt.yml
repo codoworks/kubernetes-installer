@@ -22,7 +22,7 @@
   tasks: 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 
@@ -52,10 +52,20 @@
       chdir: "/home/{{ node_username }}/helm-charts"
 
   - name: Update config cert-manager helm chart
+    when: ansible_distribution == "Ubuntu"
     become: false
     shell: |
       yq -yi '.crds.enabled = true' helm-charts/cert-manager/values.yaml
-      #add feature gate exact http false
+      yq -yi '.config.featureGates.ACMEHTTP01IngressPathTypeExact = false' helm-charts/cert-manager/values.yaml
+
+  - name: Update config cert-manager helm chart
+    when: ansible_distribution == "RedHat"
+    become: false
+    shell: |
+      yq -i '.crds.enabled = true' helm-charts/cert-manager/values.yaml
+      yq -i '.config.featureGates.ACMEHTTP01IngressPathTypeExact = false' helm-charts/cert-manager/values.yaml
+      yq -i '.webhook.hostNetwork = true' helm-charts/cert-manager/values.yaml
+      yq -i '.webhook.securePort = 10260' helm-charts/cert-manager/values.yaml
 
   - name: Install Cert Manager
     become: false

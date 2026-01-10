@@ -22,7 +22,7 @@
   tasks: 
   # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
   - name: Pre-flight check, fail if OS is not Ubuntu.
-    when: ansible_distribution != "Ubuntu"
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
 
@@ -89,8 +89,14 @@
       chdir: "/home/{{ node_username }}/helm-charts"
 
   - name: Update config promtail helm chart
+    when: ansible_distribution == "Ubuntu"
     shell: |
       yq -yi '.config.clients[0].headers = {"X-Scope-OrgID": "grafana"}' helm-charts/promtail/values.yaml
+
+  - name: Update config promtail helm chart
+    when: ansible_distribution == "RedHat"
+    shell: |
+      yq -i '.config.clients[0].headers = {"X-Scope-OrgID": "grafana"}' helm-charts/promtail/values.yaml
 
   - name: Install Promtail
     shell: helm upgrade --install promtail ./helm-charts/promtail --create-namespace --namespace monitoring --values ./helm-charts/promtail/values.yaml
@@ -103,6 +109,7 @@
   
   # This is a minimum config for testing, if you want to use as for production, need to change the config like use object storage backend etc.
   - name: Update config loki helm chart
+    when: ansible_distribution == "Ubuntu"
     shell: |
       yq -yi '.deploymentMode = "SingleBinary"' helm-charts/loki/values.yaml
       yq -yi '.read.replicas = 0' helm-charts/loki/values.yaml
@@ -113,6 +120,19 @@
       yq -yi '.loki.storage.type = "filesystem"' helm-charts/loki/values.yaml
       yq -yi '.loki.commonConfig.replication_factor = 1' helm-charts/loki/values.yaml
       yq -yi '.loki.schemaConfig = {"configs": [{"from": "2023-01-01", "store": "tsdb", "object_store": "filesystem", "schema": "v13", "index": {"prefix": "loki_index_", "period": "24h"}}]}' helm-charts/loki/values.yaml
+
+  - name: Update config loki helm chart
+    when: ansible_distribution == "RedHat"
+    shell: |
+      yq -i '.deploymentMode = "SingleBinary"' helm-charts/loki/values.yaml
+      yq -i '.read.replicas = 0' helm-charts/loki/values.yaml
+      yq -i '.backend.replicas = 0' helm-charts/loki/values.yaml
+      yq -i '.write.replicas = 0' helm-charts/loki/values.yaml
+      yq -i '.singleBinary.replicas = 1' helm-charts/loki/values.yaml
+      yq -i '.singleBinary.persistence.size = "1Gi"' helm-charts/loki/values.yaml
+      yq -i '.loki.storage.type = "filesystem"' helm-charts/loki/values.yaml
+      yq -i '.loki.commonConfig.replication_factor = 1' helm-charts/loki/values.yaml
+      yq -i '.loki.schemaConfig = {"configs": [{"from": "2023-01-01", "store": "tsdb", "object_store": "filesystem", "schema": "v13", "index": {"prefix": "loki_index_", "period": "24h"}}]}' helm-charts/loki/values.yaml
 
   - name: Install loki
     shell: helm upgrade --install loki ./helm-charts/loki --create-namespace --namespace monitoring --values ./helm-charts/loki/values.yaml

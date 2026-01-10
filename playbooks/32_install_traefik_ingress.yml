@@ -25,7 +25,7 @@
     when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
     fail:
       msg: "This script is designed for Ubuntu"
-      
+
   # PRE-CONFIG -------------------------------------------------------------------------------
   - name: Whoami on the node?
     become: false
@@ -37,27 +37,31 @@
       node_username: "{{ node_username_raw.stdout_lines[0] }}"
 
   # BEGIN ------------------------------------------------------------------------------------
-  - name: Download Metrics Server Components.
-    get_url:
-      url: "https://github.com/kubernetes-sigs/metrics-server/releases/download/{{ metrics_server_version }}/components.yaml"
-      dest: "/home/{{ node_username }}/metrics_server_components.yaml"
+  - name: Add Traefik Helm Repo
+    become: false
+    shell: helm repo add traefik https://traefik.github.io/charts
 
-  - name: Configure Metrics Server to work without TLS verification.
-    blockinfile:
-      path: "/home/{{ node_username }}/metrics_server_components.yaml"
-      insertafter: "- args:"
-      block: "        - --kubelet-insecure-tls"
+  - name: Update Helm Repo
+    become: false
+    shell: helm repo update
 
-  - name: Install Metrics Server.
-    become: true
-    become_user: "{{ node_username }}"
-    shell: "kubectl apply -f /home/{{ node_username }}/metrics_server_components.yaml >> /home/{{ node_username }}/logs/metrics_server_setup.log"
+  - name: Pull traefik helm chart
+    become: false
+    shell: helm pull traefik/traefik  --version {{ traefik_version }} --untar
     args:
-      chdir: "/home/{{ node_username }}"
-      creates: metrics_server_setup.log
-  
-  # TODO:- add Kubernetes CA authority to kube-system as a config map
-  #        and mount that onto the pod, that way you don't need to 
-  #        skip the TLS verification.
+      chdir: "/home/{{ node_username }}/helm-charts"
 
+  - name: Update config traefik helm chart
+    become: false
+    shell: |
+      yq -i '.deployment.kind = "DaemonSet"' helm-charts/traefik/values.yaml
+      yq -i '.service.externalIPs += {{ worker_ips | to_nice_json }}' helm-charts/traefik/values.yaml
+
+    vars:
+      worker_ips: "{{ groups['worker_nodes'] | map('extract', hostvars, 'inventory_hostname') | list }}"
+
+  - name: Install traefik helm chart
+    become: false
+    shell: helm install traefik ./helm-charts/traefik --namespace traefik --create-namespace --values ./helm-charts/traefik/values.yaml
+      
   # CLEAN UP ---------------------------------------------------------------------------------
