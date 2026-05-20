@@ -1,0 +1,51 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+# Contact:     hello@dexterexplains.com
+# Project:     Kubernetes Installer
+##
+
+# SINGLE MASTER NODE AS INITIALIZER ----------------------------------------------------------
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: all, !ha_proxy_node, !k8s_masters, !initializing_master_node
+# - hosts: test_nodes
+  become: true
+  gather_facts: true
+
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name" 
+  #    prompt: "User prompt? change me..."
+  #    private: false # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+  
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  # PRE-CONFIG -------------------------------------------------------------------------------
+  - name: Whoami on the node?
+    become: false
+    shell: whoami
+    register: node_username_raw
+
+  - name: Set whoami on the node as a fact.
+    set_fact:
+      node_username: "{{ node_username_raw.stdout_lines[0] }}"
+
+  # BEGIN ------------------------------------------------------------------------------------
+  - name: Prune unused crictl container images
+    ansible.builtin.command: crictl rmi --prune
+    register: crictl_output
+    changed_when: "crictl_output.stdout | length > 0"
+        
+  - name: Display pruned images summary
+    ansible.builtin.debug:
+      msg: "Cleaned up images: {{ crictl_output.stdout_lines }}"
+    when: crictl_output.stdout | length > 0
