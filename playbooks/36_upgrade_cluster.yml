@@ -106,11 +106,11 @@
       when: inventory_hostname == groups['k8s_masters'][0] # Only needed on the first master
 
     - name: Apply kubeadm upgrade
-      command: kubeadm upgrade apply v{{ k8s_version }} -y
+      command: kubeadm upgrade apply v{{ k8s_version }} --config /etc/kubernetes/kubeadm-config-upgrade.yaml -y
       when: inventory_hostname == groups['k8s_masters'][0]
 
     - name: Upgrade secondary control plane nodes
-      command: kubeadm upgrade node
+      command: kubeadm upgrade node --config /etc/kubernetes/kubeadm-config-upgrade.yaml
       when: inventory_hostname != groups['k8s_masters'][0]
 
     - name: Upgrade kubelet and kubectl packages (RHEL)
