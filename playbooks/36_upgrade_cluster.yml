@@ -1,0 +1,201 @@
+##
+# Copyrights:  2025 Codoworks.com
+# Author:      Dexter Codo
+# Website:     https://dexterexplains.com 
+# Contact:     hello@dexterexplains.com
+# Project:     Kubernetes Installer
+##
+
+# PLAYBOOK CONFIG ----------------------------------------------------------------------------
+- hosts: k8s_masters, worker_nodes
+  become: true
+  gather_facts: true
+  
+  # VAR PROMPTS ------------------------------------------------------------------------------
+
+  # vars_prompt:
+  #  - name: "var_name"
+  #    prompt: "User prompt? change me..."
+  #    private: no # should this be visible or hidden like a password
+     
+  # TASKS ------------------------------------------------------------------------------------
+  tasks:
+
+  # PRE-FLIGHT CHECKS ------------------------------------------------------------------------
+  - name: Pre-flight check, fail if OS is not Ubuntu.
+    when: ansible_distribution != "Ubuntu" and ansible_distribution != "RedHat"
+    fail:
+      msg: "This script is designed for Ubuntu"
+
+  ############### UBUNTU SETUP SECTION ###############
+  - name: Update apt cache
+    when: ansible_distribution == "Ubuntu"
+    ansible.builtin.apt:
+      update_cache: true
+
+  - name: Install dependency packages required for kubernetes.
+    when: ansible_distribution == "Ubuntu"
+    apt:
+      name: 
+        - curl 
+        - apt-transport-https 
+        - vim 
+        - git 
+        - wget 
+        - gnupg2
+        - software-properties-common 
+        - lsb-release 
+        - ca-certificates 
+        - uidmap
+        - net-tools
+        - yq
+      state: latest
+
+
+############### RedHat SETUP SECTION ###############
+# ==============================================================================
+# PLAY 1: UPGRADE CONTROL PLANE
+# ==============================================================================
+- name: Upgrade Kubernetes Control Plane
+  hosts: k8s_masters
+  become: yes
+  serial: 1 # Strictly upgrade one control plane node at a time
+  tasks:
+    - name: Cordon the control plane node
+      command: kubectl cordon {{ inventory_hostname }} --kubeconfig=/etc/kubernetes/admin.conf
+      delegate_to: "{{ groups['k8s_masters'][0] }}"
+      delay: 30
+      retries: 3
+
+    - name: Drain the control plane node
+      command: >
+        kubectl drain {{ inventory_hostname }}
+        --ignore-daemonsets
+        --delete-emptydir-data
+        --kubeconfig=/etc/kubernetes/admin.conf
+      delegate_to: "{{ groups['k8s_masters'][0] }}"
+      ignore_errors: yes
+
+    - name: Add kubernetes repository
+      when: ansible_distribution == "RedHat"
+      shell: | 
+        cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+        [kubernetes]
+        name=Kubernetes
+        baseurl=https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/rpm/
+        enabled=1
+        gpgcheck=1
+        gpgkey=https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/rpm/repodata/repomd.xml.key
+        exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+        EOF
+
+    - name: Upgrade kubeadm package (RHEL)
+      dnf:
+        name: "kubeadm-{{ k8s_version }}"
+        state: present
+        disable_excludes: kubernetes
+
+    - name: Verify kubeadm version
+      command: kubeadm version
+      register: kubeadm_ver
+    - debug: msg="{{ kubeadm_ver.stdout }}"
+
+    - name: Apply kubeadm upgrade plan
+      command: kubeadm upgrade plan v{{ k8s_version }}
+      register: upgrade_plan
+      when: inventory_hostname == groups['k8s_masters'][0] # Only needed on the first master
+
+    - name: Apply kubeadm upgrade
+      command: kubeadm upgrade apply v{{ k8s_version }} -y
+      when: inventory_hostname == groups['k8s_masters'][0]
+
+    - name: Upgrade secondary control plane nodes
+      command: kubeadm upgrade node
+      when: inventory_hostname != groups['k8s_masters'][0]
+
+    - name: Upgrade kubelet and kubectl packages (RHEL)
+      dnf:
+        name: 
+          - "kubelet-{{ k8s_version }}"
+          - "kubectl-{{ k8s_version }}"
+        state: present
+        disable_excludes: kubernetes
+
+    - name: Reload systemd daemon and restart kubelet
+      systemd:
+        daemon_reload: yes
+        name: kubelet
+        state: restarted
+
+    - name: Uncordon the control plane node
+      command: kubectl uncordon {{ inventory_hostname }} --kubeconfig=/etc/kubernetes/admin.conf
+      delegate_to: "{{ groups['k8s_masters'][0] }}"
+      register: uncordon_result
+      until: uncordon_result.rc == 0
+      delay: 10
+      retries: 3
+
+# ==============================================================================
+# PLAY 2: UPGRADE WORKER NODES
+# ==============================================================================
+- name: Upgrade Kubernetes Worker Nodes
+  hosts: worker_nodes
+  become: yes
+  serial: 1 # Strictly upgrade one worker at a time
+  tasks:
+
+    - name: Cordon the worker node
+      command: kubectl cordon {{ inventory_hostname }} --kubeconfig=/etc/kubernetes/admin.conf
+      delegate_to: "{{ groups['k8s_masters'][0] }}"
+      delay: 30
+      retries: 3
+
+    - name: Drain the worker node
+      command: >
+        kubectl drain {{ inventory_hostname }}
+        --ignore-daemonsets
+        --delete-emptydir-data
+        --kubeconfig=/etc/kubernetes/admin.conf --force
+      delegate_to: "{{ groups['k8s_masters'][0] }}"
+
+    - name: Add kubernetes repository
+      when: ansible_distribution == "RedHat"
+      shell: | 
+        cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+        [kubernetes]
+        name=Kubernetes
+        baseurl=https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/rpm/
+        enabled=1
+        gpgcheck=1
+        gpgkey=https://pkgs.k8s.io/core:/stable:/{{ k8s_apt_pkg_version }}/rpm/repodata/repomd.xml.key
+        exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+        EOF
+
+    - name: Upgrade kubeadm package (RHEL)
+      dnf:
+        name: "kubeadm-{{ k8s_version }}"
+        state: present
+        disable_excludes: kubernetes
+
+    - name: Upgrade local node configuration
+      command: kubeadm upgrade node
+
+    - name: Upgrade kubelet package (RHEL)
+      dnf:
+        name: "kubelet-{{ k8s_version }}"
+        state: present
+        disable_excludes: kubernetes
+
+    - name: Reload systemd daemon and restart kubelet
+      systemd:
+        daemon_reload: yes
+        name: kubelet
+        state: restarted
+
+    - name: Uncordon the worker node
+      command: kubectl uncordon {{ inventory_hostname }} --kubeconfig=/etc/kubernetes/admin.conf
+      delegate_to: "{{ groups['k8s_masters'][0] }}"
+      register: uncordon_result
+      until: uncordon_result.rc == 0
+      delay: 10
+      retries: 3
