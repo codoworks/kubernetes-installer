@@ -98,19 +98,23 @@
     - name: Verify kubeadm version
       command: kubeadm version
       register: kubeadm_ver
-    - debug: msg="{{ kubeadm_ver.stdout }}"
+    - debug: msg="{{ kubeadm_ver.stdout }}" 
+
+    - name: Upload custom configuration to the cluster # upgrade with existing kubeadm config (need to get and edit manually)
+      command: kubeadm init phase upload-config kubeadm --config /etc/kubernetes/kubeadm-config-upgrade.yaml
+      when: inventory_hostname == groups['control_plane'][0]
 
     - name: Apply kubeadm upgrade plan
       command: kubeadm upgrade plan v{{ k8s_version }}
       register: upgrade_plan
       when: inventory_hostname == groups['k8s_masters'][0] # Only needed on the first master
 
-    - name: Apply kubeadm upgrade # upgrade with existing kubeadm config (need to get and edit manually)
-      command: kubeadm upgrade apply v{{ k8s_version }} --config /etc/kubernetes/kubeadm-config-upgrade.yaml -y
+    - name: Apply kubeadm upgrade
+      command: kubeadm upgrade apply v{{ k8s_version }} -y
       when: inventory_hostname == groups['k8s_masters'][0]
 
-    - name: Upgrade secondary control plane nodes # upgrade with existing kubeadm config (need to get and edit manually)
-      command: kubeadm upgrade node --config /etc/kubernetes/kubeadm-config-upgrade.yaml
+    - name: Upgrade secondary control plane nodes
+      command: kubeadm upgrade node
       when: inventory_hostname != groups['k8s_masters'][0]
 
     - name: Upgrade kubelet and kubectl packages (RHEL)
